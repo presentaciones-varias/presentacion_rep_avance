@@ -1,0 +1,882 @@
+---
+# title: "Mesa de Procesamiento REP"
+# author: "Febrero 2024"
+format:
+  revealjs:
+    auto-stretch: false
+    margin: 0
+    slide-number: true
+    scrollable: true
+    preview-links: auto
+    logo: imagenes/logo_portada2.png
+    css: ine_quarto_styles.css
+    # footer: <https://quarto.org>
+---
+
+```{r librerias}
+#| echo: FALSE
+#| output: FALSE
+#| eval: TRUE
+library(dplyr)
+library(targets)
+library(kableExtra)
+library(arrow)
+library(janitor)
+library(stringr)
+library(ggplot2)
+
+arrow::set_cpu_count(2)
+options(arrow.use_threads = TRUE)
+```
+
+```{r, setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '~/PCD/rep2/')
+```
+
+#
+
+<!---
+# TODO: this does not work
+.linea-superior[]
+.linea-inferior[] 
+--->
+
+<!---
+# TODO: this does not work
+![](imagenes/logo_portada2.png){.center style="width: 20%;"}   
+--->
+
+[]{.linea-superior} 
+[]{.linea-inferior} 
+
+<!---
+<img src="imagenes/logo_portada2.png" style="width: 20%"/>  
+--->
+
+<img src="imagenes/logo_portada2.png" width="20%"/>  
+
+[**Mesa de Procesamiento**]{.big-par .center-justified}
+
+[**Proyecto Estratégico Registro Estadístico de Población (REP)**]{.big-par .center-justified}
+
+[**Resultados Preliminares**]{.big-par .center-justified}
+
+[**Agosto 2024**]{.big-par .center-justified}
+
+## Introducción 
+
+<!---
+## PE Servicios Compartidos  
+--->
+
+. . .
+
+### Objetivo del REP:
+
+[*"Compilar datos de la población permitiendo su conteo, localización y caracterización demográfica básica. Este permitirá brindar acceso a datos poblacionales desagregados, oportunos y de calidad, derivando en la disminución de costos asociados al levantamiento de datos. Además, la instalación del REP permitirá reducir las cargas en entrevistadores e informantes, entre otros beneficios.".*]{.medium-par}
+
+## Introducción  
+
+<!---
+## PE Servicios Compartidos  
+--->
+
+### Temas: 
+
+::: {.incremental .medium-par}
+
+- Procesamiento
+
+- Conteos finales
+
+- Conclusiones
+
+:::
+
+## Procesamiento - Descarga
+
+::: {.incremental .medium-par}
+
+- Actualmente las bases están en un formato de texto plano en un server de SQL.
+
+- Se realizan consultas para poder hacer las descargas.
+
+- Para el caso de **SUSESO** y **FONASA** se construyó una base anual a partir de las bases mensuales.
+
+- Dado que el **Registro Civil** es un compilado de runes agregado a la fecha de corte no fue necesario "construir" una base anual.
+
+- De acuerdo a lo anterior, tenemos las siguientes frecuencias iniciales:
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r}
+#| message: false
+rc <- as_arrow_table(tar_read(rc_small))
+fonasa <- as_arrow_table(tar_read(fonasa_small))
+suseso <- as_arrow_table(tar_read(suseso_small))
+```
+
+```{r}
+#| warning: FALSE
+n_rc <- nrow(rc)
+n_fonasa <- nrow(fonasa)
+n_suseso <- nrow(suseso)
+
+data.frame("Registro_Civil" = n_rc,
+           "FONASA" = n_fonasa,
+           "SUSESO" = n_suseso,
+           check.names = FALSE) %>% 
+  mutate('Registro_Civil' = formatC(Registro_Civil, format = "f", big.mark = ".", decimal.mark = ".", digits = 0),
+         'FONASA' = formatC(FONASA, format = "f", big.mark = ".", decimal.mark = ".", digits = 0),
+         'SUSESO' = formatC(SUSESO, format = "f", big.mark = ".", decimal.mark = ".", digits = 0)) %>% 
+  rename('Registro Civil' = Registro_Civil) %>% 
+  kbl()
+
+rm(rc, fonasa, suseso)
+```
+
+:::
+
+
+## Procesamiento - Deduplicación
+
+::: {.incremental .medium-par}
+
+- Para cada una de las bases se realizó un proceso de deduplicación mediante métodos determinísticos estrictos.
+
+- Las bases de **FONASA** y del **Registro Civil** se deduplicaron usando el nombre completo y la fecha de nacimiento, en tanto, **SUSESO** se deduplicó usando el nombre completo y el sexo.
+
+- En el caso del **Registro Civil** se encontraron **775 runes duplicados** y **14.837 personas duplicadas** por nombre y fecha de nacimiento.
+
+- En total se eliminaron 15.665 registros duplicados, quedando un total de 26.721.351 observaciones.
+
+:::
+
+::: notes
+- Para la deduplicación por RUN del RC se elegió un registro de manera aleatoria y para la deduplicación por nombre y fecha de nacimiento se eligió el RUN más alto, suponiendo que fue el último otorgado. 
+:::
+
+## Procesamiento - Deduplicación
+
+::: {.incremental .medium-par}
+
+- En  **FONASA** se encontraron  **361.541 personas duplicadas** por nombre y fecha de nacimiento.
+
+- Estos casos fueron clasificados de la siguiente manera:
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r tbl1}
+tbl1 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl1.parquet")
+tbl1 %>% kbl()
+```
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+- En total se eliminaron 184.500 registros duplicados quedando un total de 17.849.067 observaciones.
+
+::: 
+
+::: notes
+
+- Para el caso de SUSESO y de FONASA los registros duplicados fueron clasificados de acuerdo a dos condiciones: si son un NIP o un NIC, es decir, si tienen como RUN un número asignado por sobre los 30 millones (esta asginación se realiza para la población extranjera que no tiene acceso a un RUN por encontrarse en trámite o en estado migratorio irregular) y si el RUN vinculó con el RC.
+
+- Veremos en más detalle cada uno de estos casos en las próximas diapositivas pero lo relevante es que el 78,3% de los registros duplicados caen en la categoría de "nip con match" que ya veremos qué significa.
+
+:::
+
+## Procesamiento - Deduplicación
+
+::: {.incremental .medium-par}
+
+- NIP con match
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+
+```{r}
+data.frame(run = c("18.018.809-6","30.985.342-4"),
+           nombre = c("Loreto Cristina Gallardo Villegas", "Loreto Cristina Gallardo Villegas"),
+           fecha_nac = c("1991-11-08", "1991-11-08"),
+           nip = c(0, 1),
+           match = c(1, 0)) %>% 
+  kbl()
+```
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+- NIP sin match
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r}
+data.frame(run = c("18.018.809-6","30.985.342-4"),
+           nombre = c("Loreto Cristina Gallardo Villegas", "Loreto Cristina Gallardo Villegas"),
+           fecha_nac = c("1991-11-08", "1991-11-08"),
+           nip = c(0, 1),
+           match = c(0, 0)) %>% 
+  kbl()
+```
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+- Sin NIP con match
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r}
+data.frame(run = c("18.018.809-6","19.992.815-5"),
+           nombre = c("Loreto Cristina Gallardo Villegas", "Loreto Cristina Gallardo Villegas"),
+           fecha_nac = c("1991-11-08", "1991-11-08"),
+           nip = c(0, 0),
+           match = c(1, 0)) %>% 
+  kbl()
+```
+:::
+
+
+## Procesamiento - Deduplicación
+
+::: {.incremental .medium-par}
+
+- Sin NIP con match doble
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r}
+data.frame(run = c("18.018.809-6","19.992.815-5"),
+           nombre = c("Loreto Cristina Gallardo Villegas", "Loreto Cristina Gallardo Villegas"),
+           fecha_nac = c("1991-11-08", "1991-11-08"),
+           nip = c(0, 0),
+           match = c(1, 1)) %>% 
+  kbl()
+```
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+- Sin NIP sin match
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r}
+data.frame(run = c("18.018.809-6","19.992.815-5"),
+           nombre = c("Loreto Cristina Gallardo Villegas", "Loreto Cristina Gallardo Villegas"),
+           fecha_nac = c("1991-11-08", "1991-11-08"),
+           nip = c(0, 0),
+           match = c(0, 0)) %>% 
+  kbl()
+```
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+- Solo NIP
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r}
+data.frame(run = c("31.723.123-2","30.985.342-4"),
+           nombre = c("Loreto Cristina Gallardo Villegas", "Loreto Cristina Gallardo Villegas"),
+           fecha_nac = c("1991-11-08", "1991-11-08"),
+           nip = c(1, 1),
+           match = c(0, 0)) %>% 
+  kbl()
+```
+:::
+
+
+## Procesamiento - Deduplicación
+
+::: {.incremental .medium-par}
+
+- En  **SUSESO** se encontraron  **198.377 personas duplicadas** por nombre y sexo.
+
+- Estos casos fueron clasificados de la siguiente manera:
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r tbl2}
+tbl2 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl2.parquet")
+tbl2 %>% kbl()
+```
+:::
+
+::: {.incremental .medium-par}
+
+- En total se eliminaron 10.977 registros duplicados quedando un total de 8.243.408 observaciones
+
+:::
+
+## Procesamiento - Señales de vida
+
+::: {.incremental .medium-par}
+
+- Cada mes que una persona aparece en un registro funcional, da "señales de vida".
+
+- En este sentido, se creó una variable para identificar si una persona apareció por lo menos seis meses consecutivos en las bases de **SUSESO** y **FONASA**, considerando todo el año 2023.
+
+- Los resultados muestran que un 97,4% de los registros en **FONASA** y un 79,5% de los registros en **SUSESO** muestran "señales de vida".
+
+- En la base estas variables se llaman *senal_fonasa_esc_1* y *senal_suseso_esc_1*. Si es igual a uno el registro tiene señal de vida, si es igual a cero no lo tiene y si es NA es porque no hizo match en el **Registro Civil**
+
+:::
+
+::: notes
+- Para el caso de suseso, en vez de utilizar el mes de aparición del registro en la base se usa el mes de remuneración devengada dado que puede existir un desfase entre el mes en que la empresa registró el pago de las cotizaciones y el mes en el que efectivamente se le pagó.
+
+- En suseso es normal encontrar lagunas dado que no toma en consideración el cambio de situación contractual de las personas. Por ejemplo, si paso a ser un trabajador a honorarios "desaparezco" del registro.
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+```{r tbl3}
+tbl3 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl3.parquet")
+tbl3 %>% kbl()
+```
+
+:::
+
+
+## Procesamiento - Vinculación
+
+::: {.incremental .medium-par}
+
+- En esta etapa se realizó la unión de las tres bases, usando como base pivote el **Registro Civil**
+
+- La vinculación fue mediante un método determinístico el cual requiere coincidencia exacta en algún identificador, que en nuestro caso, sería el RUN.
+
+- El resultado fue un match parcial, es decir, existen registros dentro de **SUSESO** y **FONASA** para los cuales no se encontró un pareo con el **Registro Civil**.
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r tbl4}
+tbl4 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl4.parquet")
+tbl4 %>% kbl()
+```
+
+:::
+
+## Procesamiento - Vinculación
+
+::: {.incremental}
+
+![](imagenes/diagrama.png){fig-align="center"}
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+- Luego de hacer la vinculación quedamos con un tabla de 27.681.644 de registros.
+
+- Dentro de esta tabla hay 8.4 millones de registros que existen solamente en el **Registro Civil**.
+
+- En total, cerca de 9.3 millones de registros no vincularon usando el RUN.
+
+:::
+
+## Procesamiento - Edición de fechas
+
+::: {.incremental .medium-par}
+
+- Para las fechas de nacimiento y defunción del **Registro Civil** y las fechas de nacimiento de **FONASA** se realizaron las siguientes ediciones:
+
+  - Si el año de defunción fue 2024, se imputa la fecha de defunción con 0 ("vivo"). (47.184 casos)
+
+  - Fechas de nacimiento con años mayores a 2023, meses mayores a 12 o días mayores a 31 se imputan como fecha NA. (10 casos en RC y 25 casos en FONASA)
+
+  - Cuando mes o día vienen con valor 0, se cambia por 1. Esto solo corre para los casos en los que hay información en año. (451.287 casos en RC y 0 casos FONASA)
+
+  - Bajar de 31 a 30 cuando estamos en los meses que solo tienen 30. (35 casos en RC y 0 casos FONASA)
+
+  - Bajar a 28 de febrero cuando no es año bisiesto. (972 casos en RC y 0 casos en FONASA)
+  
+  - Fechas con años de largo menores a 4 dígitos se imputan como fecha NA (0 casos en RC y 135 casos en FONASA)
+  
+  - Fechas con años menores a 1800 se imputan como fecha NA. (1 caso en RC y 57 casos en FONASA)
+  
+- Luego de depurar el año, mes y día se reconstruyen las fechas (*fecha_nac_cor_rc*, *fecha_def_cor_rc*, *fecha_nac_cor_fonasa*)
+
+:::
+
+
+## Procesamiento - Edad
+
+::: {.incremental .medium-par}
+
+- Luego de corregir las fechas se procedió a calcular la edad para el **Registro Civil** y para **FONASA**
+
+- Esta se calcula como la resta (en días) entre una fecha pivote y la fecha de nacimiento corregida. Realizamos una división entera a esta diferencia por 365.25 días para transformarla a años.
+
+- En caso de que la persona esté fallecida, se usa la fecha de defunción como fecha pivote. En caso contrario, la fecha de corte es el 31 de diciembre de 2023.
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r}
+#| echo: true
+#| eval: false
+data <- data %>% 
+    arrow::to_duckdb() %>% 
+    mutate(fecha_pivote_rc = if_else(fecha_defuncion != "0", fecha_def_cor_rc, as.Date("2023-12-31")),
+           edad_rc = fecha_pivote_rc - fecha_nac_cor_rc,
+           edad_rc = edad_rc %/% 365.25,
+           edad_rc = if_else(fecha_nac_rc == "0", 99999, edad_rc, 99999),
+           edad_rc = if_else(edad_rc < 0, 99999, edad_rc),
+           edad_rc = if_else(is.na(edad_rc), 99999, edad_rc)) %>% 
+    arrow::to_arrow() %>% 
+    compute()
+
+  data <- data %>% 
+    arrow::to_duckdb() %>% 
+    mutate(fecha_pivote_fonasa = as.Date("2023-12-31"),
+           edad_fonasa = fecha_pivote_fonasa - fecha_nac_cor_fonasa,
+           edad_fonasa = edad_fonasa %/% 365.25,
+           edad_fonasa = if_else(is.na(fecha_nac_cor_fonasa), 99999, edad_fonasa, 99999)) %>% 
+    arrow::to_arrow() %>% 
+    compute()
+  
+```
+
+:::
+
+## Procesamiento - Edad
+
+. . . 
+
+::: {.incremental .medium-par layout-ncol=2 layout-valign="center"}
+
+![](imagenes/boxplot_edad.png)
+
+```{r tbl6}
+tbl6 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl6.parquet")
+tbl6 %>% kbl()
+```
+
+:::
+
+## Procesamiento - Verificación de runes
+
+::: {.incremental .medium-par}
+
+- Se creó una variable que determina si el RUN es válido o inválido.
+
+- Se considera como un RUN válido si el dígito verificador corresponde al RUN informado y si el largo está dentro de un rango entre 9 y 10 caracteres (incluyendo el guión).
+
+- Se constata que el 97,0% de los runes son válidos.
+
+:::
+
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r tbl5}
+tbl5 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl5.parquet")
+tbl5 %>% kbl()
+```
+
+:::
+
+## Procesamiento - Estado
+
+::: {.incremental .medium-par}
+
+- Creación de variable **estado**
+
+:::
+
+. . . 
+
+```{r}
+#| echo: true
+#| eval: false
+
+data <- data %>% 
+  mutate(estado = if_else(is.na(estado), "no match", estado)) %>% 
+  compute()
+
+data <- data %>% 
+  mutate(estado_2 = case_when(estado == "vivo" & outlier == "no outlier" & validacion_rut == "valido" ~ 1,
+                              estado == "vivo" & outlier == "outlier" & validacion_rut == "valido" ~ 2,
+                              estado == "vivo" & outlier == "outlier" & validacion_rut == "invalido" ~ 2,
+                              estado == "vivo" & outlier == "no outlier" & validacion_rut == "invalido" ~ 2,
+                              estado == "vivo" & outlier == "sin informacion" & validacion_rut == "valido" ~ 1,
+                              estado == "vivo" & outlier == "sin informacion" & validacion_rut == "invalido" ~ 2,
+                              estado == "muerto" & outlier == "outlier" & validacion_rut == "valido" ~ 2,
+                              estado == "muerto" & outlier == "outlier" & validacion_rut == "invalido" ~ 2,
+                              estado == "muerto" & outlier == "sin informacion" & validacion_rut == "invalido" ~ 2,
+                              estado == "muerto" & outlier == "sin informacion" & validacion_rut == "valido" ~ 2,
+                              estado == "muerto" & outlier == "no outlier" & validacion_rut == "invalido" ~ 2,
+                              estado == "muerto" & outlier == "no outlier" & validacion_rut == "valido" ~ 2,
+                              estado == "no match" & outlier == "no outlier" & validacion_rut == "valido" ~ 3,
+                              estado == "no match" & outlier == "sin informacion" & validacion_rut == "valido" ~ 3,
+                              estado == "no match" & outlier == "no outlier" & validacion_rut == "invalido" ~ 3,
+                              estado == "no match" & outlier == "sin informacion" & validacion_rut == "invalido" ~ 3)) %>% 
+  compute()
+
+data <- data %>% 
+  mutate(estado_2 = if_else((senal_fonasa_esc_1 == 1 | senal_suseso_esc_1 == 1) & is.na(fecha_def_cor_rc), 1, estado_2, estado_2)) %>% 
+  compute()
+```
+
+::: notes
+- En una primera instancia, tenemos una variable estado que se construyó usando el la fecha de defunción del RC. Esta variable clasfica como vivos a aquellas personas que no tienen fecha de defunción y como muertas a las que si la tienen. También tiene una tercera categoría que es "no match", es decir, son todas aquellas personas que no encontraron un pareo con el RC en la vinculación y por ende no tienen fecha de defunción.
+
+- Luego creamos una variable estado 2 donde se actualiza esta clasificación usando las variables outlier y validación rut.
+
+- En este sentido, una persona se clasifica como "viva" si no tiene fecha de defunción, no es outlier y tiene un run válido.
+
+- Una persona se clasifica como "muerta" si tiene fecha de defunción, si no tiene fecha de defunción pero es outlier o si no tiene fecha de defunción pero tiene un run inválido.
+
+- Finalmente, una persona se clasifica como "incierta" cuando no hizo match con el RC y cuando no tiene señales de vida en suseso o en fonasa
+:::
+
+## Procesamiento - Estado
+
+::: {.incremental .medium-par}
+
+- Según fecha de defunción, originalmente un 80% de las personas se consideran "vivas", un 16,5% se consideran "muertas" y un 3,5% son "inciertas".
+
+- Luego de la corrección, el porcentaje de personas "vivas" e "inciertas" disminuye y el de "muertos" aumenta.
+
+- Nuestro punto de partida para el conteo final son **21.997.089 personas vivas**.
+
+:::
+
+. . . 
+
+:::: {layout-ncol=2}
+
+::: {.fragment .small-par .center}
+ 
+```{r tbl7}
+#| tbl-cap: Variable estado original
+
+tbl7 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl7.parquet")
+tbl7 %>% kbl()
+```
+::: 
+
+::: {.fragment .small-par .center}
+```{r tbl8}
+#| tbl-cap: Variable estado modificada
+
+tbl8 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl8.parquet")
+tbl8 %>% kbl()
+```
+
+:::
+
+::::
+
+::: notes
+- El número de personas "inciertas" disminuye porque cambiaron de condición a "vivas" al tomar en consideración la señal de vida.
+- El número de personas "muertas" aumenta porque cambiaron de condición de "vivas" a "muertas" al tomar en consideración las variables outlier y validación run
+:::
+
+
+## Procesamiento - Condición de residencia 
+
+::: {.incremental .medium-par}
+
+- Creación de variable **condición de residencia**
+
+:::
+
+. . . 
+
+```{r}
+#| echo: true
+#| eval: false
+
+data <- data %>% 
+  mutate(condicion_residencia = case_when(senal_fonasa_esc_1 == 1 | senal_suseso_esc_1 == 1 ~ 1, # Activo
+                                          is.na(senal_fonasa_esc_1) & is.na(senal_suseso_esc_1) ~ 3, # Sin señal
+                                          TRUE ~ 2)) %>% 
+  compute()
+```
+
+. . . 
+
+::: {.incremental .medium-par}
+
+- Se considera como persona "activa" aquella que haya aparecido por lo menos seis meses consecutivos en **SUSESO** o en **FONASA**. 
+
+- Se considera "sin señal" aquella que no tiene una señal de vida en **SUSESO** y en **FONASA**
+
+- En cualquier otro caso, será una persona "inactiva".
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r tbl9}
+tbl9 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl9.parquet")
+tbl9 %>% kbl()
+
+```
+
+:::
+
+## Conteos finales
+
+::: {.incremental .medium-par}
+
+- Clasificamos a la población según su estado y su condición de residencia.
+
+- Las personas "vivas" se pueden clasificar como activas, inactivas y sin señal.
+
+- Consideramos dos escenarios para el conteo final: 
+
+  - Personas vivas y activas (18.608.343)
+  
+  - Personas vivas activas y sin señal (21.674.524)
+
+- Existen personas "muertas" activas, que en su mayoría fueron personas que fallecieron en el 2023.
+
+:::
+
+. . . 
+
+::: {.incremental .medium-par}
+
+```{r tbl10}
+tbl10 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl10.parquet")
+tbl10 %>% kbl()
+```
+:::
+
+## Conteos finales - Según sexo
+
+::: {.incremental .medium-par}
+
+- En ambos escenarios, el porcentaje de mujeres es levemente mayor que el de los hombres, siendo consistente con las proyecciones de población.
+
+:::
+
+. . . 
+
+:::: {layout-ncol=2}
+
+::: {.fragment .small-par .center}
+ 
+```{r tbl11}
+#| tbl-cap: Vivos activos
+tbl11 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl11.parquet")
+tbl11 %>% kbl()
+```
+::: 
+
+::: {.fragment .small-par .center}
+```{r tbl12}
+#| tbl-cap: Vivos activos más sin señal
+tbl12 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl12.parquet")
+tbl12 %>% kbl()
+```
+
+:::
+
+::::
+
+## Conteos finales - Según nacionalidad
+
+::: {.incremental .medium-par}
+
+- En el escenario de activos más sin señal, el porcentaje de población extranjera es mayor en comparación al de solamente activos.
+
+- La estimación oficial de población extranjera del INE y Sermig para diciembre 2022 alcanzó **1.625.074 personas**.
+
+:::
+
+
+. . . 
+
+:::: {layout-ncol=2}
+
+::: {.fragment .small-par .center}
+ 
+```{r tbl13}
+#| tbl-cap: Vivos activos
+tbl13 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl13.parquet")
+tbl13 %>% kbl()
+```
+::: 
+
+::: {.fragment .small-par .center}
+```{r tbl14}
+#| tbl-cap: Vivos activos más sin señal
+tbl14 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl14.parquet")
+tbl14 %>% kbl()
+```
+
+:::
+
+::::
+
+::: notes
+
+- Creemos que esto puede deberse a que no estamos observando a la población extranjera que se va del país. Para eso requerimos de más registros para determinar sus señales de vida.
+
+:::
+
+## Conteos finales - Según edad
+
+::: {.incremental .medium-par}
+
+- Según edad, el grupo etario de 30 a 39 años tiene la mayor representación en ambos escenarios.
+
+- Existen 13.522 personas con edades sobre los 110 años.
+
+- La decisión fue dejar estos casos porque presentan señales de vida ya sea en **SUSESO** o en **FONASA**.
+
+:::
+
+. . . 
+
+:::: {layout-ncol=2}
+
+::: {.fragment .small-par .center}
+ 
+```{r tbl15}
+#| tbl-cap: Vivos activos
+tbl15 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl15.parquet")
+tbl15 %>% kbl()
+```
+::: 
+
+::: {.fragment .small-par .center}
+```{r tbl16}
+#| tbl-cap: Vivos activos más sin señal
+tbl16 <- read_parquet("presentations/presentacion-rep-demografia/tablas/tbl16.parquet")
+tbl16 %>% kbl()
+```
+
+:::
+
+::::
+
+## Conteos finales - Según edad y sexo
+
+:::: {layout-nrow=2}
+
+::: {.fragment .small-par .center}
+ 
+![Vivos activos](imagenes/edad_sexo_plot_1.png)
+
+::: 
+
+::: {.fragment .small-par .center}
+
+![Vivos activos más sin señal](imagenes/edad_sexo_plot_2.png)
+
+:::
+
+::: {.fragment .small-par .center}
+
+![](imagenes/edad_sexo_plot_1_freq.png)
+
+:::
+
+::: {.fragment .small-par .center}
+
+![](imagenes/edad_sexo_plot_2_freq.png)
+
+:::
+
+::::
+
+
+::: notes
+
+- Realizamos la comparación de las distribuciones por edad y sexo con las proyecciones de CELADE para el año 2023. En los gráficos las barras oscuras corresponden a las proyecciones y las más transparentes a nuestras estimaciones. En la columna de la derecha tenemos a los vivos activos y en la izquierda a los vivos activos más sin señal. En la primera fila tenemos la distribución en porcentajes y en la segunda en frecuencias absolutas.
+
+- En el escenario de vivos activos, las mayores diferencias se presentan en los tramos de cero a nuevo años, donde presentamos un menor % y en el tramo de 30 a 39 años donde presentamos un mayor % en comparación a CELADE
+
+- En el escenario de los vivos activos más sin señal, las mayores diferencias se observan en los tramos de 90 a 99 años donde presentamos un mayor % (los hombres en mayor medida que las mujeres) y en el tramo 20 a 29 años donde observamos que un % menor con comparación a CELADE.
+
+:::
+
+## Conclusiones
+
+::: {.incremental .medium-par}
+
+- El total de personas integradas a través del RUN da cuenta de 18.608.343 y 21.674.524 personas en el escenario de vivos activos y vivos activos más sin señal.
+
+- Según las proyecciones de población del INE al 2023 la población alcanza 19.960.889 personas, y según las proyecciones de CELADE la población alcanza 19.658.831.
+
+- Aún nos faltan registros para complementar las señales de vida que no estamos capturando. 
+
+  - Superintendencia de Salud
+  
+  - MINEDUC
+  
+- Realización de pruebas de integración probabilística usando el paquete SPLINK.
+
+- Dado que es complejo explicar el proceso de categorización (estado y condición de residencia) se trabajará en un esquema que describa el flujo.
+
+:::
+
